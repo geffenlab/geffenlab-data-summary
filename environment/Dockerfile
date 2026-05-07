@@ -24,5 +24,5 @@ RUN /opt/miniconda/bin/conda env create -f /opt/environment/environment.yml
 ENV MPLCONFIGDIR=/tmp/matplotlib
 RUN mkdir $MPLCONFIGDIR && chmod a+w $MPLCONFIGDIR
 
-COPY code/run_data_collection.py /opt/code/run_data_collection.py
+COPY code/*.py /opt/code/
 ENTRYPOINT ["/opt/miniconda/bin/conda", "run", "--no-capture-output", "-n", "geffenlab-data-summary", "python", "/opt/code/run_data_collection.py"]

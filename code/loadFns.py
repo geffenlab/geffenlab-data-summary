@@ -184,11 +184,12 @@ def gen_dataframe_local(
     behavior_mat_path: Path,
     phy_path: Path,
     event_times_path: Path,
+    spike_times_sec_path: Path,
     interneuron_search: bool = True,
 ):
     '''
     This is similar to gen_dataframe_git(), above, and should have the same result.
-    The difference is this one looks for all data, behavioral and neuronal, on the file system and not in via the GitHub API.
+    The difference is this one looks for all data, behavioral and neuronal, on the file system and not via the GitHub API.
     '''
 
     if "Habituation" in behavior_txt_path.as_posix():
@@ -201,6 +202,7 @@ def gen_dataframe_local(
         None,
         None,
         event_times_path,
+        spike_times_sec_path,
         interneuron_search,
         neuronal_loc=phy_path.as_posix()
     )
@@ -539,6 +541,7 @@ def load_neuronal(
     tag,
     sess_date,
     event_times_path = None,
+    spike_times_sec_path = None,
     interneuron_search = True,
     neuronal_loc = 'G:' + os.sep + 'Anjali_sorted' + os.sep + 'Preprocessed_data' + os.sep
 ):
@@ -626,12 +629,14 @@ def load_neuronal(
                     else:
                         print("Invalid selection. Please enter a number from the list.")
                 except ValueError:
-                    print("Invalid input. Please enter a number.")     
+                    print("Invalid input. Please enter a number.")
 
-    spike_times = sorted(find_files(".npy", "spike_times_sec_adj", neuronal_loc))
-
-    neuronal_loc = os.path.abspath(os.path.join(os.path.dirname(spike_times[0]), '.'))
-    spike_times = np.load(spike_times[0])
+    if spike_times_sec_path is None:
+        spike_times = sorted(find_files(".npy", "spike_times_sec_adj", neuronal_loc))
+        neuronal_loc = os.path.abspath(os.path.join(os.path.dirname(spike_times[0]), '.'))
+        spike_times = np.load(spike_times[0])
+    else:
+        spike_times = np.load(spike_times_sec_path)
 
     spike_clusters = sorted(find_files(".npy", "spike_clusters", neuronal_loc))
     spike_clusters = np.load(spike_clusters[0])
