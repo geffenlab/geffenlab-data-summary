@@ -14,170 +14,6 @@ import pandas as pd
 
 from scipy.interpolate import interp1d
 
-# First, we have information and functions to access the geffenlab/2AFC_2lickport repository, which contains information
-# about the behavioral session being completed. 
-
-
-def get_filenames_from_git(ID, date, ask = True):
-
-    '''
-    Gets the appropriate file names from the github repository
-
-    Args:
-    ID: Mouse ID
-    date: date of session to analyze, in "MMDDYY" format 
-
-    Returns:
-    txt_result: name of relevant txt file (for getting response times)
-    mat_result: name of relevant matlab file (for getting task contingency information and response directions)
-
-    '''
-
-    import requests
-    
-    path = patht + ID
-    r = requests.get(
-        'https://api.github.com/repos/{owner}/{repo}/contents/{path}'.format(
-        owner=owner, repo=repo, path=path),
-        headers={
-            'accept': 'application/vnd.github.v3.raw',
-            'authorization': 'token {}'.format(token)
-                }
-        )
-    
-    temp = json.loads(r.text)
-    
-    li = np.array([item.get('name') for item in temp if date in item.get('name')])
-
-    txt_result = []
-    mat_result = []
-    for file in li:
-        if file.endswith('.txt'):
-            txt_result.append(file)
-        elif file.endswith('.mat'):
-            mat_result.append(file)
-
-    if ask:
-
-        if len(txt_result) > 1:
-
-            print(f"Warning: Found {len(txt_result)} text files for {ID} on {date}. Choose one:")
-            for idx, file in enumerate(txt_result,1):
-                print(f"{idx}. {os.path.basename(file)}")
-
-            a = True
-            while a == True:
-                try:
-                    choice = int(input("Enter the number of the text file you want to select: "))
-                    if 1 <= choice <= len(txt_result):
-                        txt_index = choice - 1
-                        a = False
-                    else:
-                        print("Invalid selection. Please enter a number from the list.")
-                except ValueError:
-                    print("Invalid input. Please enter a number.")   
-        else:
-            txt_index = 0
-
-        if len(mat_result) > 1:
-
-            print(f"Warning: Found {len(mat_result)} mat files for {ID} on {date}. Choose one:")
-            for idx, file in enumerate(mat_result,1):
-                print(f"{idx}. {os.path.basename(file)}")
-
-            a = True
-            while a == True:
-                try:
-                    choice = int(input("Enter the number of the mat file you want to select: "))
-                    if 1 <= choice <= len(mat_result):
-                        mat_index = choice - 1
-                        a = False
-                    else:
-                        print("Invalid selection. Please enter a number from the list.")
-                except ValueError:
-                    print("Invalid input. Please enter a number.")   
-        else:
-            mat_index = 0
-
-        return txt_result[txt_index], mat_result[mat_index]
-    
-    else:
-        return txt_result[-1], mat_result[-1]
-
-def get_file_from_git(path):
-
-    import requests
-
-    r = requests.get(
-    'https://api.github.com/repos/{owner}/{repo}/contents/{path}'.format(
-    owner=owner, repo=repo, path=path),
-    headers={
-        'accept': 'application/vnd.github.v3.raw',
-        'authorization': 'token {}'.format(token)
-            }
-    )
-
-    return r
-
-def gen_dataframe_git(ID, sess_date, ask = True, interneuron_search = True, neuronal_location = 'G:' + os.sep + 'Anjali_sorted' + os.sep + 'Preprocessed_data' + os.sep):
-
-    '''
-    Generates data frame that combines trial contingency information with stimulus and response timing, array containing
-    timings of noise bursts, data frame containing spike timings, and finally an array containing the IDs associated with
-    clusters that are "kept", the definition of which can be changed through the "allow_mua" parameter. This function is
-    essentially a wrapper that calls the "load_behavior", "load_neuronal" and "load_response events" functions and then
-    combines information from each into the "trial_events" data frame.
-
-    Args:
-    ID: Mouse ID
-    sess_date: date of session to analyze, in "YYMMDD" format 
-    neuronal_location: path to folder that contains neuronal data (defaults to X:/npx_data... folder on Josie)
-
-    Returns:
-    trial_events: pandas dataframe that has one row for each behavior trial. Columns: 
-        - stim_time: stimulus onset time in seconds, on the same clock as the spike data. 
-        - resp_time: first lick time during response window in seconds, on the same clock as the spike data. NaN 
-          if no response within response window. 
-        - stim: stimulus frequency in log(Hz). 
-        - cat: stimulus category- 1:Low, 2:Probe, 3:High. 
-        - acc: accuracy, 0:Incorrect, 1:Correct, 2:No Response. 
-        - dir: response direction. 1:Left, 2:Right, 0:No Response. 
-        - resp: whether the mouse responded. 0:No response, 1:response.
-    spikes_df: pandas dataframe that has one row for each spike recorded. Columns:
-        - cluster: cluster ID associated with spike
-        - time: spike time, in seconds, on the same clock as stimulus event data.
-        - ch: channel associated with cluster ID
-    kept_clusters: numpy array that contains the IDs associated with the clusters that should be
-        analyzed.
-    nb_times: numpy array that contains all (adjusted) times that the arduino reported "INCORRECT",
-        which we are using as an estimate for when the noise burst is presented.
-    '''
-
-    date_obj = datetime.strptime(sess_date, '%y%m%d')
-    date_temp = date_obj.strftime('%m%d%y')
-
-    taskfile, matfile = get_filenames_from_git(ID, date_temp, ask)
-
-    if "Habituation" in taskfile:
-        behavior_df = load_behavior_habit_git(ID, taskfile)
-    else:
-        behavior_df = load_behavior_git(ID, matfile)
-
-    spikes_df, stim_events_temp, kept_clusters, cluster_info = load_neuronal(ID, sess_date, None, interneuron_search, neuronal_loc = neuronal_location)
-    events_df, nb_times = load_response_events_git(ID, taskfile, stim_events_temp)
-
-    if len(events_df) == len(behavior_df):
-        trial_events = pd.concat([events_df, behavior_df], axis = 1)
-    else:
-        if len(events_df) > len(behavior_df):
-            events_df = events_df[0:len(behavior_df)]
-        else:
-            behavior_df = behavior_df[0:len(events_df)]
-
-        trial_events = pd.concat([events_df, behavior_df], axis = 1)
-
-    return trial_events, spikes_df, cluster_info, kept_clusters, nb_times
-
 
 def gen_dataframe_local(
     behavior_txt_path: Path,
@@ -188,14 +24,14 @@ def gen_dataframe_local(
     interneuron_search: bool = True,
 ):
     '''
-    This is similar to gen_dataframe_git(), above, and should have the same result.
+    This is similar to the original population-analysis gen_dataframe_git(), and should have the same result.
     The difference is this one looks for all data, behavioral and neuronal, on the file system and not via the GitHub API.
     '''
 
     if "Habituation" in behavior_txt_path.as_posix():
-        behavior_df = load_behavior_habit_git(None, behavior_txt_path)
+        behavior_df = load_behavior_habit(None, behavior_txt_path)
     else:
-        behavior_df = load_behavior_git(None, behavior_mat_path)
+        behavior_df = load_behavior(None, behavior_mat_path)
 
     print(f"Loading neuronal data from {phy_path}")
     spikes_df, stim_events_temp, kept_clusters, cluster_info = load_neuronal(
@@ -206,7 +42,7 @@ def gen_dataframe_local(
         interneuron_search,
         neuronal_loc=phy_path.as_posix()
     )
-    events_df, nb_times = load_response_events_git(None, behavior_txt_path.as_posix(), stim_events_temp)
+    events_df, nb_times = load_response_events(None, behavior_txt_path.as_posix(), stim_events_temp)
 
     if len(events_df) == len(behavior_df):
         trial_events = pd.concat([events_df, behavior_df], axis = 1)
@@ -221,13 +57,13 @@ def gen_dataframe_local(
     return trial_events, spikes_df, cluster_info, kept_clusters, nb_times
 
 
-def load_behavior_git(ID, matfile: Path):
+def load_behavior(ID, matfile: Path):
     '''
     Loads behavior file, returns dataframe with trial-by-trial information
 
     Args:
     ID: Mouse ID
-    matfile: file name of .mat structure in the github repository
+    matfile: file name of .mat file
 
     Returns:
     behavior_df: pandas dataframe that has one row for each behavior trial. there are columns associated
@@ -235,13 +71,7 @@ def load_behavior_git(ID, matfile: Path):
         mouse responded at all. 
     '''
 
-    if Path(matfile).exists():
-        mat_contents = loadmat(matfile)
-    else:
-        path = patht + ID + '/' + matfile
-        r = get_file_from_git(path)
-        in_memory_file = io.BytesIO(r.content)
-        mat_contents = loadmat(in_memory_file)
+    mat_contents = loadmat(matfile)
 
     stim = np.log2(mat_contents['tt'][:,4])
     cat = mat_contents['tt'][:,0]
@@ -261,23 +91,18 @@ def load_behavior_git(ID, matfile: Path):
 
     return behavior_df
 
-def load_behavior_habit_git(ID, taskfile): #, stim_events_df):
+def load_behavior_habit(ID, taskfile): #, stim_events_df):
    
     '''
     Loads text file, returns the stimulus frequencies associated with each trial of habituation
 
     Args:
     ID: Mouse ID
-    taskfile: file name of .txt file in the github repository, habituation
+    taskfile: file name of .txt file, habituation
     '''    
 
-    if Path(taskfile).exists():
-        with open(taskfile, 'r') as f:
-            mystr = f.read()
-    else:
-        path = patht + ID + '/' + taskfile
-        r = get_file_from_git(path)
-        mystr = r.text
+    with open(taskfile, 'r') as f:
+        mystr = f.read()
 
     lines = [line for line in mystr.split('\n') if line.strip() != '']
 
@@ -374,15 +199,14 @@ def load_behavior_habit_git(ID, taskfile): #, stim_events_df):
     return pd.DataFrame(behavior_df)
 
 
-
-def load_response_events_git(ID, taskfile, stim_events_df):
+def load_response_events(ID, taskfile, stim_events_df):
     '''
     Loads text file, returns dataframe with stimulus event times and response event times, adjusted to
         align with the stimulus event times from the NIDAQ card.
 
     Args:
     ID: Mouse ID
-    taskfile: file name of .txt file in the github repository
+    taskfile: file name of .txt file
     stim_events_df: pandas dataframe that contains column "time", referring to stimulus event times
         measured on the same clock as the spike data
 
@@ -394,13 +218,8 @@ def load_response_events_git(ID, taskfile, stim_events_df):
         which we are using as an estimate for when the noise burst is presented.  
     '''
 
-    if Path(taskfile).exists():
-        with open(taskfile, 'r') as f:
-            mystr = f.read()
-    else:
-        path = patht + ID + '/' + taskfile
-        r = get_file_from_git(path)
-        mystr = r.text
+    with open(taskfile, 'r') as f:
+        mystr = f.read()
 
     lines = [line for line in mystr.split('\n') if line.strip() != '']
 
