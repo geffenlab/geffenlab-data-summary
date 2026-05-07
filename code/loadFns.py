@@ -697,20 +697,31 @@ def load_neuronal(
 
 
 def pick_good_clusters(cluster_info):
-    """Pick 'good' clusters based on Phy curation 'group' column, fall back on Kilosort 'KSGroup' column."""
+    """Pick 'good' clusters based on Phy curation 'group' column, fall back on Kilosort 'KSLabel' column."""
 
     # Prefer to use Phy curation 'group' column.
-    cluster_label = cluster_info['group'].astype(str)
+    if 'group' in cluster_info:
+        print("Picking good units from info column 'group'.")
+        cluster_label = cluster_info['group'].astype(str)
+    else:
+        print("Info column 'group' not found, picking good units from info column 'KSLabel'.")
+        cluster_label = cluster_info['KSLabel'].astype(str)
+
     is_good = cluster_label == 'good'
     if not np.any(is_good):
-        print("Warning: no 'good' units found for info column 'group', falling back to column 'KSLabel'.")
-        cluster_label = cluster_info['KSLabel'].astype(str)
-        is_good = cluster_label == 'good'
+        raise ValueError("No 'good' units found.")
 
     return is_good, cluster_label
 
 
-def identify_interneurons(tag, sess_date, hw_cutoff = None, pt_cutoff = None, fr_cutoff = None, neuronal_loc = 'G:' + os.sep + 'Anjali_sorted' + os.sep + 'Preprocessed_data' + os.sep):
+def identify_interneurons(
+    tag,
+    sess_date,
+    hw_cutoff = None,
+    pt_cutoff = None,
+    fr_cutoff = None,
+    neuronal_loc = 'G:' + os.sep + 'Anjali_sorted' + os.sep + 'Preprocessed_data' + os.sep,
+):
     '''
     This code is from Anjali, it identifies interneurons
     '''
@@ -775,9 +786,6 @@ def identify_interneurons(tag, sess_date, hw_cutoff = None, pt_cutoff = None, fr
                         print("Invalid selection. Please enter a number from the list.")
                 except ValueError:
                     print("Invalid input. Please enter a number.")     
-
-    spike_times = sorted(find_files(".npy", "spike_times_sec_adj", neuronal_loc))
-    neuronal_loc = os.path.abspath(os.path.join(os.path.dirname(spike_times[0]), '.'))
 
     mean_waveforms = sorted(find_files(".npy", "mean_waveforms", neuronal_loc))
     if mean_waveforms:

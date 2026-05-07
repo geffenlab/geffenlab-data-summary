@@ -7,9 +7,11 @@ import pickle
 
 import numpy as np
 
+from files import find, find_one
+from create_cluster_info import create_cluster_info
 import loadFns as lf
 import helperFns as hf
-from files import find, find_one
+from multiplot import run_multiplots
 
 
 def set_up_logging():
@@ -37,7 +39,7 @@ def collect_data(
     stim_edges: list[float],
     resp_edges: list[float],
     pickle_name: str
-):
+) -> list[Path]:
     """Collect neuronal and behavioral data using utilities in loadFns.py, produce a pickle with dataframes in it."""
 
     raw_data_session_path = Path(raw_data_path, experimenter, subject, date)
@@ -67,6 +69,7 @@ def collect_data(
         )
     )
     logging.info(f"Collecting data for {len(sessions)} sessions.")
+    pickle_paths = []
     for behavior_txt, behavior_mat, sorted_session_name in sessions:
         logging.info(f"Processing session {sorted_session_name}:")
         logging.info(f"Behavior .txt: {behavior_txt}:")
@@ -79,17 +82,23 @@ def collect_data(
         params_py_paths = find(params_py_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
         logging.info(f"Looking for spike times in seconds for each probe.")
-        spike_times_sec_paths = find(spike_times_sec_pattern, filter=sorted_session_name, parent=processed_data_session_path)
+        spike_sec_paths = find(spike_times_sec_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
         # For each probe we expect a params.py and a spike-times-in-seconds .npy.
         # We'll expect these to correspond 1:1, and align them alphabetically.
         probes = list(
             zip(
                 sorted(params_py_paths),
-                sorted(spike_times_sec_paths),
+                sorted(spike_sec_paths),
             )
         )
         for params_py_path, spike_times_sec_path in probes:
+            # Create Phy cluster_info.tsv, if needed.
+            cluster_info_tsv_path = Path(params_py_path).with_name("cluster_info.tsv")
+            if not cluster_info_tsv_path.exists():
+                logging.info(f"Creating cluster info: {cluster_info_tsv_path}")
+                create_cluster_info(params_py_path)
+
             # Load the lab dataframes from local files.
             phy_path = params_py_path.parent
             trial_events, spikes_df, cluster_info, kept_clusters, nb_times = lf.gen_dataframe_local(
@@ -122,6 +131,7 @@ def collect_data(
             }
 
             pickle_path = Path(analysis_session_path, sorted_session_name, phy_path.name, pickle_name)
+            pickle_paths.append(pickle_path)
             pickle_path.parent.mkdir(exist_ok=True, parents=True)
             with open(pickle_path, 'wb') as pickle_out:
                 logging.info(f"Saving collected data to pickle: {pickle_path}")
@@ -130,12 +140,15 @@ def collect_data(
     logging.info(f"Collected data for {len(sessions)} sessions.")
     logging.info(f"OK.")
 
+    return pickle_paths
+
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     set_up_logging()
 
     parser = ArgumentParser(
-        description="Collect neuronal and behavioral data for subject and date, save a pickle for each session or probe.")
+        description="Collect neuronal and behavioral data for subject and date, save a pickle for each session or probe."
+    )
 
     parser.add_argument(
         "--raw-data-root",
@@ -235,6 +248,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="File name for .pkl with collected neuronal and behavioral data for each session subdir. (default: %(default)s)",
         default="neuronal_plus_behavioral.pkl"
     )
+    parser.add_argument(
+        "--multiplot",
+        action=BooleanOptionalAction,
+        help="True or False, whether to generate multiplot figures for each saved pickle. (default: %(default)s)",
+        default=False
+    )
 
     cli_args = parser.parse_args(argv)
 
@@ -242,7 +261,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     processed_data_path = Path(cli_args.processed_data_root)
     analysis_path = Path(cli_args.analysis_root)
     try:
-        collect_data(
+        pickle_paths = collect_data(
             raw_data_path,
             processed_data_path,
             analysis_path,
@@ -264,6 +283,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except:
         logging.error("Error collecting neuronal and behavioral data.", exc_info=True)
         return -1
+
+    if cli_args.multiplot:
+        try:
+            run_multiplots(pickle_paths)
+
+        except:
+            logging.error("Error running multiplots.", exc_info=True)
+            return -2
 
 
 if __name__ == "__main__":
