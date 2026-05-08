@@ -44,15 +44,15 @@ def run_multiplots(
 
         print(f"{len(sorted_ids)} units sorted by d-prime: {sorted_ids}")
 
-    figures_path = Path(pickle_path.parent, "multiplot")
-    figures_path.mkdir(exist_ok=True, parents=True)
-    hf.batch_plot(
-        identifier=f"{pickle_subject}-{pickle_date}",
-        neuron_ids=sorted_ids,
-        spikes_df=spikes_df,
-        trial_events=trial_events,
-        plot_fn=hf.complex_condition_plot,
-        save_dir=figures_path.as_posix()
-    )
+        figures_path = Path(pickle_path.parent, "multiplot")
+        figures_path.mkdir(exist_ok=True, parents=True)
+        hf.batch_plot(
+            identifier=f"{pickle_subject}-{pickle_date}",
+            neuron_ids=sorted_ids,
+            spikes_df=spikes_df,
+            trial_events=trial_events,
+            plot_fn=hf.complex_condition_plot,
+            save_dir=figures_path.as_posix()
+        )
 
     logging.info(f"OK.")
