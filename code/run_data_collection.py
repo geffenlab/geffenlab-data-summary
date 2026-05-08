@@ -32,6 +32,7 @@ def collect_data(
     behavior_txt_pattern: str,
     behavior_mat_pattern: str,
     sorting_subdir: str,
+    session_key_words: list[str],
     params_py_pattern: str,
     spike_times_sec_pattern: str,
     event_times_pattern: str,
@@ -46,28 +47,30 @@ def collect_data(
     processed_data_session_path = Path(processed_data_path, experimenter, subject, date)
     analysis_session_path = Path(analysis_path, experimenter, subject, date)
 
-    # Locate behavior data for each session.
-    logging.info(f"Looking for per-session behavior .txt files.")
-    behavior_txt_matches = find(behavior_txt_pattern, parent=raw_data_session_path)
-
-    logging.info(f"Looking for per-session behavior .mat files.")
-    behavior_mat_matches = find(behavior_mat_pattern, parent=raw_data_session_path)
-
-    # Locate sorted session names within the sorting subdir.
+    # Locate sorted session subir names.
     sorting_path = Path(processed_data_session_path, sorting_subdir)
     logging.info(f"Looking for sorted session names within: {sorting_path}")
     sorted_session_names = [sorting_dir.name for sorting_dir in sorting_path.iterdir() if sorting_dir.is_dir()]
     logging.info(f"Found {len(sorted_session_names)} sorted session names: {sorted_session_names}")
 
-    # For each session we expect a behavior txt, a behavior .mat and a sorting subdir (with one or more probes in it).
-    # We'll expect these to correspond 1:1:1, and align them alphabetically.
-    sessions = list(
-        zip(
-            sorted(behavior_txt_matches),
-            sorted(behavior_mat_matches),
-            sorted(sorted_session_names)
-        )
-    )
+    # Locate corresponding sets of behavior files and sorting subdirs.
+    sessions = []
+    for key_word in session_key_words:
+        logging.info(f"Looking for '{key_word}' behavior .txt files.")
+        behavior_txt = find_one(behavior_txt_pattern, filter=key_word, parent=raw_data_session_path, none_ok=True)
+
+        logging.info(f"Looking for '{key_word}' behavior .mat files.")
+        behavior_mat = find_one(behavior_mat_pattern, filter=key_word, parent=raw_data_session_path, none_ok=True)
+
+        matching_session_names = [name for name in sorted_session_names if key_word in name]
+
+        if behavior_txt and behavior_mat and matching_session_names:
+            logging.info(f"Found complete behavior and sorted data for '{key_word}'.")
+            session = (behavior_txt, behavior_mat, matching_session_names[0])
+            sessions.append(session)
+        else:
+            logging.info(f"Skipping key word '{key_word}', no complete dataset found.")
+
     logging.info(f"Collecting data for {len(sessions)} sessions.")
     pickle_paths = []
     for behavior_txt, behavior_mat, sorted_session_name in sessions:
@@ -205,6 +208,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default="kilosort4"
     )
     parser.add_argument(
+        "--session-key-words",
+        type=str,
+        nargs="+",
+        help="List of key words used to match up corresponding behavior files and sorting subdirs. (default: %(default)s)",
+        default=["testing", "training"]
+    )
+    parser.add_argument(
         "--params-py-pattern",
         type=str,
         help="Glob pattern to locate Phy params.py(s), within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
@@ -271,6 +281,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cli_args.behavior_txt_pattern,
             cli_args.behavior_mat_pattern,
             cli_args.sorting_subdir,
+            cli_args.session_key_words,
             cli_args.params_py_pattern,
             cli_args.spike_times_sec_pattern,
             cli_args.event_times_pattern,
