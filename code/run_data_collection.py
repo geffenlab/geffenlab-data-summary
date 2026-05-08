@@ -214,7 +214,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--spike-times-sec-pattern",
         type=str,
         help="Glob pattern to locate aligned spike times in seconds, within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
-        default="tprime/*/*/spike_times_sec_adjusted.npy"
+        default="tprime/*/*/spike_times_sec_adj.npy"
     )
     parser.add_argument(
         "--event-times-pattern",
