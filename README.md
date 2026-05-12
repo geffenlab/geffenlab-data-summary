@@ -37,7 +37,7 @@ Next, create a new repository [tag](https://git-scm.com/book/en/v2/Git-Basics-Ta
 ```
 # Review existing tags and choose the next version number to use.
 git pull --tags
-git tag -l
+git tag --list
 
 # Create the tag for the next version
 git tag -a v0.0.5 -m "Now with lasers!"
@@ -48,14 +48,14 @@ When you `git push --tags`, GitHub will detect your new version and kick off a f
 
 You can see the code for this automated workflow in this repository at [build-tag.yml](./.github/workflows/build-tag.yml).
 
-You can follow the progress of the Docker image build at the step [Actions](https://github.com/benjamin-heasly/geffenlab-data-summary/actions) page.  When the build completes you should see a new [published version]((https://github.com/benjamin-heasly/geffenlab-data-summary/pkgs/container/geffenlab-data-summary)) with the version tag you provided, like `v0.0.5`.
+You can follow the progress of the Docker image build at the step [Actions](https://github.com/benjamin-heasly/geffenlab-data-summary/actions) page.  When the build completes you should see a new [published version](https://github.com/benjamin-heasly/geffenlab-data-summary/pkgs/container/geffenlab-data-summary) with the version tag you provided, like `v0.0.5`.
 
 ## Update your pipeline
 
-When your step's new Docker image is ready, you can update your pipeline to refer to the new version.  This would mean updating the version number in your pipeline YAML, for example [here](https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/as-nidq.yaml#L41).  The next time you run your pipeline it will download the newer Docker image version that you specified, and use that version of the environment and code.
+When your step's new Docker image is ready you can update your pipeline to refer to the new version.  This means updating the version number in your pipeline YAML, for example [here](https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/as-nidq.yaml#L41).  The next time you run your pipeline it will download the newer Docker image version that you specified, and use that version of the environment and code.
 
 ### older verions are still OK
 
 Existing pipelines that refer to older Docker image versions should continue to work as-is, even after you create a new version.  Older Docker images will remain, saved on GitHub, available for use.
 
-This means new image versions are always optional.  You can update your pipelines to use new versions when you're ready.  Different people can use different versions of the same step without interference.
+This means new image versions are always optional.  You can update your pipelines to use new versions when you're ready.  Different people and different pipelines can use different versions of the same step without interference.
