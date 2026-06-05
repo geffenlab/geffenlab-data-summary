@@ -2,7 +2,7 @@
 
 This repository defines a processing step that is part of the [geffenlab-ephys-pipeline](https://github.com/geffenlab/geffenlab-ephys-pipeline).
 
-This "data summary" step combines session behavioral data with sorted neural data and saves aligned, combined data as [pickled](https://docs.python.org/3/library/pickle.html) [dataframes](https://pandas.pydata.org/).  It can optionally produce neuronal "multiplot" figures from the pickled data.
+This "data summary" step combines session behavioral data with sorted neural data and saves aligned, combined data as [pickled](https://docs.python.org/3/library/pickle.html) [dataframes](https://pandas.pydata.org/).
 
 This repository contains code borrowed from [jcollina/population-analysis](https://github.com/jcollina/population-analysis) -- thank you!
 
@@ -18,7 +18,7 @@ The [geffenlab-ephys-pipeline](https://github.com/geffenlab/geffenlab-ephys-pipe
 
 This repository is configured to automatically build and publish a new Docker image, each time a [repository tag](https://git-scm.com/book/en/v2/Git-Basics-Tagging) is pushed to GitHub.
 
-The published images are located in the GitHub Container Registry as [geffenlab-data-summary](https://github.com/benjamin-heasly/geffenlab-data-summary/pkgs/container/geffenlab-data-summary).  You can find the latest and previous versions of the step's Docker image there.
+The published images are located in the GitHub Container Registry as [geffenlab-data-summary](https://github.com/geffenlab/geffenlab-data-summary/pkgs/container/geffenlab-data-summary).  You can find the latest and previous versions of the step's Docker image there.
 
 ## Example update workflow
 
@@ -48,7 +48,7 @@ When you `git push --tags`, GitHub will detect your new version and kick off a f
 
 You can see the code for this automated workflow in this repository at [build-tag.yml](./.github/workflows/build-tag.yml).
 
-You can follow the progress of the Docker image build at the step [Actions](https://github.com/benjamin-heasly/geffenlab-data-summary/actions) page.  When the build completes you should see a new [published version](https://github.com/benjamin-heasly/geffenlab-data-summary/pkgs/container/geffenlab-data-summary) with the version tag you provided, like `v0.0.5`.
+You can follow the progress of the Docker image build at the step [Actions](https://github.com/geffenlab/geffenlab-data-summary/actions) page.  When the build completes you should see a new [published version](https://github.com/geffenlab/geffenlab-data-summary/pkgs/container/geffenlab-data-summary) with the version tag you provided, like `v0.0.5`.
 
 ## Update your pipeline
 

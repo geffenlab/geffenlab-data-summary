@@ -9,9 +9,7 @@ import numpy as np
 
 from files import find, find_one
 from create_cluster_info import create_cluster_info
-import loadFns as lf
-import helperFns as hf
-from multiplot import run_multiplots
+from loadFns import gen_dataframe_local, gen_tensor
 
 
 def set_up_logging():
@@ -104,7 +102,7 @@ def collect_data(
 
             # Load the lab dataframes from local files.
             phy_path = params_py_path.parent
-            trial_events, spikes_df, cluster_info, kept_clusters, nb_times = lf.gen_dataframe_local(
+            trial_events, spikes_df, cluster_info, kept_clusters, nb_times = gen_dataframe_local(
                 behavior_txt,
                 behavior_mat,
                 phy_path,
@@ -115,9 +113,9 @@ def collect_data(
 
             all_clusters = np.unique(spikes_df['cluster'])
             stim_edges_array = np.arange(stim_edges[0], stim_edges[1], stim_edges[2])
-            stim_tensor = hf.gen_tensor(stim_edges_array, all_clusters, trial_events['stim_time'], spikes_df)
+            stim_tensor = gen_tensor(stim_edges_array, all_clusters, trial_events['stim_time'], spikes_df)
             resp_edges_array = np.arange(resp_edges[0], resp_edges[1], resp_edges[2])
-            resp_tensor = hf.gen_tensor(resp_edges_array, all_clusters, trial_events['resp_time'], spikes_df)
+            resp_tensor = gen_tensor(resp_edges_array, all_clusters, trial_events['resp_time'], spikes_df)
             df_dict = {
                 "experimenter": experimenter,
                 "subject": subject,
@@ -258,12 +256,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="File name for .pkl with collected neuronal and behavioral data for each session subdir. (default: %(default)s)",
         default="neuronal_plus_behavioral.pkl"
     )
-    parser.add_argument(
-        "--multiplot",
-        action=BooleanOptionalAction,
-        help="True or False, whether to generate multiplot figures for each saved pickle. (default: %(default)s)",
-        default=False
-    )
 
     cli_args = parser.parse_args(argv)
 
@@ -271,7 +263,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     processed_data_path = Path(cli_args.processed_data_root)
     analysis_path = Path(cli_args.analysis_root)
     try:
-        pickle_paths = collect_data(
+        collect_data(
             raw_data_path,
             processed_data_path,
             analysis_path,
@@ -294,14 +286,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except:
         logging.error("Error collecting neuronal and behavioral data.", exc_info=True)
         return -1
-
-    if cli_args.multiplot:
-        try:
-            run_multiplots(pickle_paths)
-
-        except:
-            logging.error("Error running multiplots.", exc_info=True)
-            return -2
 
 
 if __name__ == "__main__":

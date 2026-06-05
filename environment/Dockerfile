@@ -19,10 +19,5 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-py311_24.5.0-0-Linux-x86
 COPY environment/environment.yml /opt/environment/environment.yml
 RUN /opt/miniconda/bin/conda env create -f /opt/environment/environment.yml
 
-# Give Matplotlib a writeable, user-independent cache directory.
-# https://matplotlib.org/stable/install/environment_variables_faq.html
-ENV MPLCONFIGDIR=/tmp/matplotlib
-RUN mkdir $MPLCONFIGDIR && chmod a+w $MPLCONFIGDIR
-
 COPY code/*.py /opt/code/
 ENTRYPOINT ["/opt/miniconda/bin/conda", "run", "--no-capture-output", "-n", "geffenlab-data-summary", "python", "/opt/code/run_data_collection.py"]

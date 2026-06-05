@@ -11,6 +11,43 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 
+def gen_tensor(time_edges, neurons, events, spikes_df, nSpikes = False):
+    '''
+    Generates an i x j x k tensor, where i = # events, j = # neurons, k = # time bins
+
+    Args:
+    time_edges: temporal edges to bin region around each event
+    neurons: IDs of neuronal clusters to include in the tensor
+    events: array of times associated with events of interest (say, stimulus onsets)
+    spikes_df: pandas dataframe that has one row for each spike recorded. The first column is the ID
+        associated with the cluster that spiked, while the second column is the time (in seconds) when
+        the spike was recorded
+
+    Note: If time_edges has length 2, this function returns a i x j matrix, not a tensor.    
+
+    Returns:
+    mat: i x j x k tensor
+    '''
+    stepT = time_edges[:-1]
+
+    mat = np.zeros((len(events),len(neurons), len(stepT)))
+
+    for isp, spi in enumerate(neurons):
+        sp = spikes_df.loc[spikes_df['cluster'] == spi, 'time'].values
+        for ie, ev in enumerate(events):
+            for s, step in enumerate(stepT):
+                winTemp = (time_edges[s], time_edges[s+1])
+                mat[ie,isp,s]  = np.sum(np.logical_and(sp > (ev + winTemp[0]),sp < (ev + winTemp[1])))
+
+    if nSpikes == False:
+        mat /= (winTemp[1] - winTemp[0])
+
+    if len(stepT) == 1:
+        mat = np.squeeze(mat)
+    
+    return mat 
+
+
 def gen_dataframe_local(
     behavior_txt_path: Path,
     behavior_mat_path: Path,
