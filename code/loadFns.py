@@ -348,40 +348,69 @@ def load_response_events(ID, taskfile, stim_events_df):
 
 ## Here we're playing around with getting google sheets data
 
-def get_row_df_from_public_sheet(tab_name, date_string):
-    # Construct URL for CSV export of the specific tab
-    url = f"https://docs.google.com/spreadsheets/d/{sheets_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
+def get_row_df_from_public_sheet(
+        subject,
+        date_string,
+        date_format_in = '%m%d%Y',
+        date_format_sheet = '%Y-%m-%d',
+        date_column_name = 'DATE',
+        sheet_id = '1_hiEZ6xfpQNN-XLbrtfjkTdmALU4zI21aTrUDhsZxHo',
+        gid_mapping_csv = "sheet_gids_per_subject.csv"
+):
+    """
+    Read subject and session metadata from a Google Sheets doc on the web.
+
+    We have two ways to query Google sheets for subject medadata.
     
+    The "/export" url returns well-formed CSV data with headers and data cells filled in with the text we expect.
+
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={sheet_tab_gid}"
+
+    But, this requires us to know the "gid" of the tab within the sheet, that corresponds to a give subject.
+
+    The "gviz/tq" url allows sheet queries and allows us to look up a tab by known subject name rather than obscure gid.
+
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tq=SELECT%20*&tqx=out:csv&sheet={sheet_tab_name}"
+
+    But, this returns CSV data with missing values.
+    This seems to be caused by incorrect guessing of datatypes for columns that contain mixed types.
+
+    Here we opt for the complete and well-formed data, at the expense of needing to keep track of gids ourselves.
+    We can always learn the gid for a sheet tab by scraping it out of the browser url, for example:
+
+        https://docs.google.com/spreadsheets/d/1_hiEZ6xfpQNN-XLbrtfjkTdmALU4zI21aTrUDhsZxHo/edit?gid=1564640587#gid=1564640587
+
+    This url from the browser ends with "gid=1564640587"
+    """
+
+    # Look up our known subjects and gids.
+    sheet_gids = pd.read_csv(gid_mapping_csv)
+
+    gids = sheet_gids.loc[sheet_gids['subject'] == subject, 'gid']
+    if gids.empty:
+        print(f"Could not find a gid for subject {subject} in document {gid_mapping_csv}.")
+        return None
+    else:
+        gid = gids.values[0]
+        print(f"Found worksheet gid {gid} for subject {subject}.")
+
+    # Construct URL for CSV export of the specific tab
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
     try:
+        date_obj = datetime.strptime(date_string, date_format_in)
+        date_string = date_obj.strftime(date_format_sheet)
 
-        date_obj = datetime.strptime(date_string, '%y%m%d')
-        date_string = date_obj.strftime('%Y-%m-%d')
-            
         # Read raw data with no header to get full control
-        raw_df = pd.read_csv(url, header=None)
+        data = pd.read_csv(url, header=1)
 
-        # Get headers from the second row (index 1)
-        headers = raw_df.iloc[1].tolist()
-
-        # Get data rows starting from the third row
-        data = raw_df.iloc[2:].reset_index(drop=True)
-        data.columns = headers
-
-        # Parse date column (assumed to be first column)
-        data.iloc[:, 0] = pd.to_datetime(data.iloc[:, 0], errors='coerce')
-        target_date = pd.to_datetime(date_string)
-
-        # Find matching row
-        matched_rows = data[data.iloc[:, 0] == target_date]
-
-        if matched_rows.empty:
-            print(f"No row found for date {date_string} in tab '{tab_name}'.")
-            return None
-        elif len(matched_rows) >= 2:
-            print(f"Multiple rows found for date {date_string}; selecting the final occurrence.")
-            return matched_rows.iloc[[-1]].reset_index(drop=True)
+        last_index = data[date_column_name].where(data[date_column_name] == date_string).last_valid_index()
+        if last_index:
+            print(f"Found date {date_string} for subject '{subject}' at index {last_index}.")
+            return data.iloc[last_index].to_dict()
         else:
-            return matched_rows.reset_index(drop=True)
+            print(f"No row found for date {date_string} for subject '{subject}'.")
+            return None
     
     except Exception as e:
         print(f"Error fetching or parsing sheet: {e}")
