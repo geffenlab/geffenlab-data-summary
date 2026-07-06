@@ -20,4 +20,5 @@ COPY environment/environment.yml /opt/environment/environment.yml
 RUN /opt/miniconda/bin/conda env create -f /opt/environment/environment.yml
 
 COPY code/*.py /opt/code/
+COPY code/session-info-gids.csv /opt/code/
 ENTRYPOINT ["/opt/miniconda/bin/conda", "run", "--no-capture-output", "-n", "geffenlab-data-summary", "python", "/opt/code/run_data_collection.py"]

@@ -1,15 +1,17 @@
 import sys
-from argparse import ArgumentParser, BooleanOptionalAction
+from argparse import ArgumentParser
 from typing import Optional, Sequence
 import logging
 from pathlib import Path
-import pickle
+from datetime import datetime
+import json
 
-import numpy as np
+import pandas as pd
 
 from files import find, find_one
 from create_cluster_info import create_cluster_info
-from loadFns import gen_dataframe_local, gen_tensor
+from session_pickles import save_session_pickles
+from loadFns import get_row_dict_from_public_sheet
 
 
 def set_up_logging():
@@ -20,6 +22,73 @@ def set_up_logging():
     )
 
 
+def gather_session_and_subject_info(
+    raw_data_path: Path,
+    experimenter: str,
+    subject: str,
+    date: str,
+    date_format: str,
+    subject_info_json_pattern: str,
+    session_info_json_pattern: str,
+    session_info_sheet_id: str,
+    session_info_gids_csv_pattern: str,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """This loads optional session and subject metadata from JSON and/or a public Google Sheets document."""
+
+    logging.info("Attempting to look up session info from Sheet.")
+
+    # Figure out the Google Sheets worksheet "gid" (identifier for a specific worksheet/tab) for the given subject.
+    # This should be stored in a .csv file with columns ['subject', 'gid'].
+    # The .csv can be given along with the experimenter's raw data, or we can fall back on code/session-info-gids.csv in this repo.
+    # Why do we need this?
+    # Along with the Google Sheets sheed id, we need the gid of the tab for the current subject.
+    # With these we can construct an "export/" URL to obtain the worksheet as .csv data.
+    # Google Sheets doesn't provide a URL for looking up the gid based on the worksheet tab name, so we have to keep track here.
+    # We need to use the "export/" URL, rather than the "gviz/" URL (which supports tab names) because the gviz version omits many cell values!
+    sheet_session_info = {}
+    raw_data_experimenter_path = Path(raw_data_path, experimenter)
+    gids_csv_default_path = Path("/opt/code/session-info-gids.csv")
+    gids_csv_path = find_one(session_info_gids_csv_pattern, default=gids_csv_default_path, parent=raw_data_experimenter_path)
+    sheet_gids = pd.read_csv(gids_csv_path)
+    gids = sheet_gids.loc[sheet_gids['subject'] == subject, 'gid']
+    if gids.empty:
+        logging.warning(f"Could not find a worksheet gid for subject {subject} in document {gids_csv_path}.")
+    else:
+        # Now we know the worksheet gid for the current subject, we can look up the CSV row for the current date.
+        gid = gids.values[0]
+        logging.info(f"Found worksheet gid {gid} for subject {subject}.")
+        date_obj = datetime.strptime(date, date_format)
+        sheet_session_info = get_row_dict_from_public_sheet(
+            date_obj=date_obj,
+            sheet_id=session_info_sheet_id,
+            tab_gid=gid
+        )
+
+    # Look for optional subject metadata in a JSON file.
+    subject_info = {}
+    logging.info("Attempting to load subject info from JSON.")
+    raw_data_subject_path = Path(raw_data_experimenter_path, subject)
+    subject_info_json_path = find_one(subject_info_json_pattern, none_ok=True, parent=raw_data_subject_path)
+    if subject_info_json_path:
+        logging.info(f"Loading subject info from: {subject_info_json_path}")
+        with open(subject_info_json_path, 'r', encoding='utf-8') as f:
+            subject_info = json.load(f)
+
+    # Look for optional session metadata in a JSON file.
+    json_session_info = {}
+    logging.info("Attempting to load session info from JSON.")
+    raw_data_session_path = Path(raw_data_subject_path, subject)
+    session_info_json_path = find_one(session_info_json_pattern, none_ok=True, parent=raw_data_session_path)
+    if session_info_json_path:
+        logging.info(f"Loading session info from: {session_info_json_path}")
+        with open(session_info_json_path, 'r', encoding='utf-8') as f:
+            json_session_info = json.load(f)
+
+    # Combine session metadata from the Google sheet and/or JSON file.
+    session_info = sheet_session_info | json_session_info
+    return (session_info, subject_info)
+
+
 def collect_data(
     raw_data_path: Path,
     processed_data_path: Path,
@@ -27,19 +96,38 @@ def collect_data(
     experimenter: str,
     subject: str,
     date: str,
+    date_format: str,
+    subject_info_json_pattern: str,
+    session_info_json_pattern: str,
+    session_info_sheet_id: str,
+    session_info_gids_csv_pattern: str,
     behavior_txt_pattern: str,
     behavior_mat_pattern: str,
     sorting_subdir: str,
     session_key_words: list[str],
     params_py_pattern: str,
+    phy_tsv_names: list[str],
+    phy_npy_names: list[str],
     spike_times_sec_pattern: str,
     event_times_pattern: str,
-    interneuron_search: bool,
+    stim_times_pattern: str,
     stim_edges: list[float],
     resp_edges: list[float],
-    pickle_name: str
 ) -> list[Path]:
     """Collect neuronal and behavioral data using utilities in loadFns.py, produce a pickle with dataframes in it."""
+
+    # Gather session and subjet metadata from JSON and/or public Google Sheet.
+    session_info, subject_info = gather_session_and_subject_info(
+        raw_data_path,
+        experimenter,
+        subject,
+        date,
+        date_format,
+        subject_info_json_pattern,
+        session_info_json_pattern,
+        session_info_sheet_id,
+        session_info_gids_csv_pattern,
+    )
 
     raw_data_session_path = Path(raw_data_path, experimenter, subject, date)
     processed_data_session_path = Path(processed_data_path, experimenter, subject, date)
@@ -62,22 +150,24 @@ def collect_data(
 
         matching_session_names = [name for name in sorted_session_names if key_word in name]
 
-        if behavior_txt and behavior_mat and matching_session_names:
-            logging.info(f"Found complete behavior and sorted data for '{key_word}'.")
+        if matching_session_names:
+            logging.info(f"Found sorted data for '{key_word}'.")
             session = (behavior_txt, behavior_mat, matching_session_names[0])
             sessions.append(session)
         else:
-            logging.info(f"Skipping key word '{key_word}', no complete dataset found.")
+            logging.info(f"Skipping key word '{key_word}', no complete sorted data found.")
 
     logging.info(f"Collecting data for {len(sessions)} sessions.")
-    pickle_paths = []
     for behavior_txt, behavior_mat, sorted_session_name in sessions:
         logging.info(f"Processing session {sorted_session_name}:")
         logging.info(f"Behavior .txt: {behavior_txt}:")
         logging.info(f"Behavior .mat: {behavior_mat}:")
 
-        logging.info(f"Looking for session alignment event times.")
-        event_times_path = find_one(event_times_pattern, filter=sorted_session_name, parent=processed_data_session_path)
+        logging.info(f"Looking for session event times.")
+        event_times_paths = find(event_times_pattern, filter=sorted_session_name, parent=processed_data_session_path)
+
+        logging.info(f"Looking for session stim event times.")
+        stim_times_path = find_one(stim_times_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
         logging.info(f"Looking for a params.py for each probe.")
         params_py_paths = find(params_py_pattern, filter=sorted_session_name, parent=processed_data_session_path)
@@ -86,7 +176,7 @@ def collect_data(
         spike_sec_paths = find(spike_times_sec_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
         # For each probe we expect a params.py and a spike-times-in-seconds .npy.
-        # We'll expect these to correspond 1:1, and align them alphabetically.
+        # We'll expect these to correspond 1:1 and align them alphabetically (names should only differ by eg imec0 vs imec1).
         probes = list(
             zip(
                 sorted(params_py_paths),
@@ -100,56 +190,37 @@ def collect_data(
                 logging.info(f"Creating cluster info: {cluster_info_tsv_path}")
                 create_cluster_info(params_py_path)
 
-            # Load the lab dataframes from local files.
+            # Put everything we collected above together into one or more pickles.
             phy_path = params_py_path.parent
-            trial_events, spikes_df, cluster_info, kept_clusters, nb_times = gen_dataframe_local(
-                behavior_txt,
-                behavior_mat,
-                phy_path,
-                event_times_path,
-                spike_times_sec_path,
-                interneuron_search,
+            pickles_path = Path(analysis_session_path, sorted_session_name, phy_path.name)
+            save_session_pickles(
+                experimenter=experimenter,
+                subject=subject,
+                date=date,
+                subject_info=subject_info,
+                session_info=session_info,
+                behavior_txt_path=behavior_txt,
+                behavior_mat_path=behavior_mat,
+                phy_path=phy_path,
+                phy_tsv_names=phy_tsv_names,
+                phy_npy_names=phy_npy_names,
+                spike_times_sec_path=spike_times_sec_path,
+                event_times_paths=event_times_paths,
+                stim_times_path=stim_times_path,
+                stim_edges=stim_edges,
+                resp_edges=resp_edges,
+                pickles_path=pickles_path
             )
-
-            all_clusters = np.unique(spikes_df['cluster'])
-            stim_edges_array = np.arange(stim_edges[0], stim_edges[1], stim_edges[2])
-            stim_tensor = gen_tensor(stim_edges_array, all_clusters, trial_events['stim_time'], spikes_df)
-            resp_edges_array = np.arange(resp_edges[0], resp_edges[1], resp_edges[2])
-            resp_tensor = gen_tensor(resp_edges_array, all_clusters, trial_events['resp_time'], spikes_df)
-            df_dict = {
-                "experimenter": experimenter,
-                "subject": subject,
-                "date": date,
-                "trial_events": trial_events,
-                "spikes_df": spikes_df,
-                "cluster_info": cluster_info,
-                "kept_clusters": kept_clusters,
-                "nb_times": nb_times,
-                "stim_tensor": stim_tensor,
-                "stim_edges": stim_edges,
-                "resp_tensor": resp_tensor,
-                "resp_edges": resp_edges,
-            }
-
-            pickle_path = Path(analysis_session_path, sorted_session_name, phy_path.name, pickle_name)
-            pickle_paths.append(pickle_path)
-            pickle_path.parent.mkdir(exist_ok=True, parents=True)
-            with open(pickle_path, 'wb') as pickle_out:
-                logging.info(f"Saving collected data to pickle: {pickle_path}")
-                pickle.dump(df_dict, pickle_out)
 
     logging.info(f"Collected data for {len(sessions)} sessions.")
     logging.info(f"OK.")
-
-    return pickle_paths
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     set_up_logging()
 
     parser = ArgumentParser(
-        description="Collect neuronal and behavioral data for subject and date, save a pickle for each session or probe."
-    )
+        description="Collect neuronal and behavioral data, save a pickle for each session or probe.")
 
     parser.add_argument(
         "--raw-data-root",
@@ -179,13 +250,43 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--subject",
         type=str,
         help="Subject of the session to be processed. (default: %(default)s)",
-        default="AS20-minimal3"
+        default="AS20-demo"
     )
     parser.add_argument(
         "--date",
         type=str,
-        help="Date of the session to be processed DDMMYYYY. (default: %(default)s)",
+        help="Date of the session to be processed, see DATE_FORMAT. (default: %(default)s)",
         default="03112025"
+    )
+    parser.add_argument(
+        "--date-format",
+        type=str,
+        help="Python datetime.strptime() format for the given DATE. (default: %(default)s)",
+        default="%m%d%Y"
+    )
+    parser.add_argument(
+        "--subject-info-json-pattern",
+        type=str,
+        help="Glob pattern to locate subject info JSON, within RAW_DATA_ROOT/EXPERIMENTER/SUBJECT. (default: %(default)s)",
+        default="**/*subject-info.json"
+    )
+    parser.add_argument(
+        "--session-info-json-pattern",
+        type=str,
+        help="Glob pattern to locate session info JSON, within RAW_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
+        default="**/*session-info.json"
+    )
+    parser.add_argument(
+        "--session-info-sheet-id",
+        type=str,
+        help="Id of a public Google Sheets document with session info. (default: %(default)s)",
+        default="1_hiEZ6xfpQNN-XLbrtfjkTdmALU4zI21aTrUDhsZxHo"
+    )
+    parser.add_argument(
+        "--session-info-gids-csv-pattern",
+        type=str,
+        help="Glob pattern to match a .csv with columns ['subject', 'gid'] for getting a Google Sheets worksheed gid per subject, within RAW_DATA_ROOT/EXPERIMENTER. (default: %(default)s)",
+        default="**/session-info-gids.csv"
     )
     parser.add_argument(
         "--behavior-txt-pattern",
@@ -219,6 +320,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default="kilosort4/*/*/params.py"
     )
     parser.add_argument(
+        "--phy-tsv-names",
+        type=str,
+        nargs="+",
+        help="List of Phy .tsv files to load and include in the Pickle for each session/probe. (default: %(default)s)",
+        default=["cluster_group", "cluster_info", "cluster_KSLabel", "cluster_peak_channel"]
+    )
+    parser.add_argument(
+        "--phy-npy-names",
+        type=str,
+        nargs="+",
+        help="List of Phy .npy files to load and include in the Pickle for each session/probe. (default: %(default)s)",
+        default=["spike_clusters", "channel_map"]
+    )
+    parser.add_argument(
         "--spike-times-sec-pattern",
         type=str,
         help="Glob pattern to locate aligned spike times in seconds, within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
@@ -227,14 +342,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--event-times-pattern",
         type=str,
-        help="Glob pattern to locate event text file(s), within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
-        default="tprime/*/*nidq.xd_8_3_0.txt"
+        help="Glob pattern to locate multiple text file(s), within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
+        default="tprime/*/*.txt"
     )
     parser.add_argument(
-        "--interneuron-search",
-        action=BooleanOptionalAction,
-        help="True or False, whether to analyze waveforms and identify interneurons. (default: %(default)s)",
-        default=True
+        "--stim-times-pattern",
+        type=str,
+        help="Glob pattern to locate one stim event text file, within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
+        default="tprime/*/*nidq.xd_8_3_0.txt"
     )
     parser.add_argument(
         "--stim-edges",
@@ -250,12 +365,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="List of bin edge [low, high, step] for creating resp_tensor. (default: %(default)s)",
         default=[-1.0, 1.0, 0.02]
     )
-    parser.add_argument(
-        "--pickle-name",
-        type=str,
-        help="File name for .pkl with collected neuronal and behavioral data for each session subdir. (default: %(default)s)",
-        default="neuronal_plus_behavioral.pkl"
-    )
 
     cli_args = parser.parse_args(argv)
 
@@ -270,17 +379,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cli_args.experimenter,
             cli_args.subject,
             cli_args.date,
+            cli_args.date_format,
+            cli_args.subject_info_json_pattern,
+            cli_args.session_info_json_pattern,
+            cli_args.session_info_sheet_id,
+            cli_args.session_info_gids_csv_pattern,
             cli_args.behavior_txt_pattern,
             cli_args.behavior_mat_pattern,
             cli_args.sorting_subdir,
             cli_args.session_key_words,
             cli_args.params_py_pattern,
+            cli_args.phy_tsv_names,
+            cli_args.phy_npy_names,
             cli_args.spike_times_sec_pattern,
             cli_args.event_times_pattern,
-            cli_args.interneuron_search,
+            cli_args.stim_times_pattern,
             cli_args.stim_edges,
             cli_args.resp_edges,
-            cli_args.pickle_name
         )
 
     except:

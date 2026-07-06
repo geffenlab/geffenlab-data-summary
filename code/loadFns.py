@@ -1,7 +1,7 @@
 from pathlib import Path
-from shutil import copytree, copy2
 import os
 from datetime import datetime
+import logging
 
 import numpy as np
 import scipy.io as spio
@@ -65,11 +65,9 @@ def gen_dataframe_local(
 
     print(f"Loading neuronal data from {phy_path}")
     spikes_df, stim_events_temp, kept_clusters, cluster_info = load_neuronal(
-        None,
-        None,
         event_times_path,
         spike_times_sec_path,
-        neuronal_loc=phy_path.as_posix()
+        phy_path=phy_path.as_posix()
     )
     events_df, nb_times = load_response_events(behavior_txt_path.as_posix(), stim_events_temp)
 
@@ -347,10 +345,11 @@ def load_response_events(taskfile, stim_events_df):
 
 
 def get_row_dict_from_public_sheet(
-        date_string: str,
-        date_column_name='DATE',
-        sheet_id='1_hiEZ6xfpQNN-XLbrtfjkTdmALU4zI21aTrUDhsZxHo',
-        tab_gid="1564640587"
+    date_obj: datetime,
+    sheet_id: str,
+    tab_gid: str,
+    sheet_date_format: str = '%Y-%m-%d',
+    sheet_date_column_name: str = 'DATE',
 ) -> dict[str, str]:
     """
     Read subject and session metadata from a Google Sheets doc on the web.
@@ -381,42 +380,41 @@ def get_row_dict_from_public_sheet(
 
     # Construct a URL for CSV export of one tab within a public sheet.
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={tab_gid}"
+    logging.info(f"Looking up session info Sheet from: {url}")
 
     try:
         # Read raw data and expect a header row.
         data = pd.read_csv(url, header=1)
 
         # Find the row whose date matches the give date string.
-        last_index = data[date_column_name].where(data[date_column_name] == date_string).last_valid_index()
+        date_string = date_obj.strftime(sheet_date_format)
+        last_index = data[sheet_date_column_name].where(data[sheet_date_column_name] == date_string).last_valid_index()
         if last_index:
-            print(f"Found date {date_string} at row at index {last_index}.")
+            logging.info(f"Found date {date_string} at row at index {last_index}.")
             return data.iloc[last_index].to_dict()
         else:
-            print(f"No row found for date {date_string}.")
+            logging.warning(f"No row found for date {date_string}.")
             return {}
 
     except Exception as e:
-        print(f"Error fetching or parsing sheet: {e}")
+        logging.warning(f"Unable to get session info from Sheet: {e}")
         return {}
 
 ##
 
 
 def load_neuronal(
-    subject: str,
-    sess_date: str,
-    event_times_path: Path,
+    stim_times_path: Path,
     spike_times_sec_path: Path,
-    neuronal_loc: Path
+    phy_path: Path
 ):
     '''
-    Loads neuronal file, returns dataframe with trial-by-trial information
+    Loads neuronal file, returns dataframe with trial-by-trial information.
 
     Args:
-    subject: mouse ID string to look for in folder
-    sess_id: date of session to analyze, in "YYYY-MM-DD_HR-MN-SC" format 
-    neuronal_loc: relative path to folder that contains neuronal files
-    allow_mua: should clusters identified as multi-unit be included in the "kept-clusters" array?
+    stim_times_path: path to a .txt file with eg stim event times, to align on
+    spike_times_sec_path: path to a .npy file with spike times in seconds
+    phy_path: path to directory of Phy outputs
 
     Returns:
     spikes_df: pandas dataframe that has one row for each spike recorded. The first column is the ID
@@ -429,79 +427,8 @@ def load_neuronal(
         analyzed. This is based on the choice of whether to "allow_mua".
     '''
 
-    if subject is not None and sess_date is not None:
-        # First, we transform the date to the format that KS uses, and pull out the relevant folder. The code
-        # currently fails if there are multiple recordings from the same day, this could be fixed in a few
-        # different ways.
-
-        date_obj = datetime.strptime(sess_date, '%y%m%d')
-        date_temp = date_obj.strftime('%m%d%Y')
-
-        # Now, we find the folder that contains the neural data. First we narrow down the list of potential
-        # folders to the ones that contain the right date and tag (often mouse ID). Then, if that returns
-        # multiple folders, we ask the user to choose which folder to use.
-
-        res = find_folders(date_temp, neuronal_loc)
-
-        res = [r for r in res if subject in r]
-        # res = [r for r in res if 'Single6Tone' in r]
-
-        res = sorted(res, key=len)
-        temp = []
-        for folder in res:
-            if not any(os.path.commonpath([folder, top]) == top for top in temp):
-                temp.append(folder)
-        res = temp
-
-        if not res:
-            print(f"No matching KS folders found for mouse {subject} on {sess_date}, trying different date format:")
-            date_temp_2 = date_obj.strftime('%m%d%y')
-            res = find_folders(date_temp_2, neuronal_loc)
-
-            res = [r for r in res if subject in r]
-            # res = [r for r in res if 'Single6Tone' in r]
-
-            res = sorted(res, key=len)
-            temp = []
-            for folder in res:
-                if not any(os.path.commonpath([folder, top]) == top for top in temp):
-                    temp.append(folder)
-            res = temp
-
-            if len(res) > 0:
-                print("Folder(s) found with new date format.")
-
-            if len(res) == 0:
-                raise ValueError('No folders found for neuronal analysis.')
-
-        if len(res) == 1:
-            neuronal_loc = res[0]
-
-        if len(res) > 1:
-            print("Multiple folders found, please select one:")
-            for idx, file in enumerate(res, 1):
-                print(f"{idx}. {os.path.basename(file)}")
-
-            a = True
-            while a == True:
-                try:
-                    choice = int(input("Enter the number of the file you want to select: "))
-                    if 1 <= choice <= len(res):
-                        neuronal_loc = res[choice - 1]
-                        a = False
-                    else:
-                        print("Invalid selection. Please enter a number from the list.")
-                except ValueError:
-                    print("Invalid input. Please enter a number.")
-
-    if spike_times_sec_path is None:
-        spike_times = sorted(find_files(".npy", "spike_times_sec_adj", neuronal_loc))
-        neuronal_loc = os.path.abspath(os.path.join(os.path.dirname(spike_times[0]), '.'))
-        spike_times = np.load(spike_times[0])
-    else:
-        spike_times = np.load(spike_times_sec_path)
-
-    spike_clusters = sorted(find_files(".npy", "spike_clusters", neuronal_loc))
+    spike_times = np.load(spike_times_sec_path)
+    spike_clusters = sorted(find_files(".npy", "spike_clusters", phy_path))
     spike_clusters = np.load(spike_clusters[0])
 
     spikes_df = {
@@ -514,16 +441,15 @@ def load_neuronal(
     # the info that we need, and links each neuron to the appropriate channel. However, if this file does not
     # exist, we can still get most of the information from the raw kilosort labels in the cluster_group file.
 
-    cluster_info_1 = sorted(find_files(".tsv", "cluster_info", neuronal_loc))
-
-    if len(cluster_info_1) == 0:
-        cluster_group = sorted(find_files(".tsv", "cluster_group", neuronal_loc))
+    cluster_info_path = sorted(find_files(".tsv", "cluster_info", phy_path))
+    if len(cluster_info_path) == 0:
+        cluster_group = sorted(find_files(".tsv", "cluster_group", phy_path))
         cluster_group = pd.read_csv(cluster_group[0], sep='\t')
         kept_clusters = cluster_group.loc[cluster_group['KSLabel'] == 'good', 'cluster_id'].values
         print('Warning: cluster_info file not found, using KSLabels. No channel info available.')
 
     else:
-        cluster_info = pd.read_csv(cluster_info_1[0], sep='\t')
+        cluster_info = pd.read_csv(cluster_info_path[0], sep='\t')
         is_good, cluster_label = pick_good_clusters(cluster_info)
         kept_clusters = cluster_info.loc[is_good, 'cluster_id'].values
 
@@ -531,10 +457,10 @@ def load_neuronal(
         spikes_df = pd.merge(spikes_df, temp, 'left', left_on='cluster', right_on='cluster_id')
         spikes_df.drop('cluster_id', axis=1, inplace=True)
 
-    if event_times_path is None:
-        event_times_matches = sorted(find_files(".csv", "events", neuronal_loc))
-        event_times_path = event_times_matches[0]
-    event_times = np.genfromtxt(event_times_path, delimiter=',')
+    if stim_times_path is None:
+        event_times_matches = sorted(find_files(".csv", "events", phy_path))
+        stim_times_path = event_times_matches[0]
+    event_times = np.genfromtxt(stim_times_path, delimiter=',')
 
     stim_events_df = {
         'event': 1 + 0*event_times,
@@ -542,7 +468,7 @@ def load_neuronal(
     }
     stim_events_df = pd.DataFrame(stim_events_df)
 
-    if len(cluster_info_1) == 0:
+    if len(cluster_info_path) == 0:
         return spikes_df, stim_events_df, kept_clusters, cluster_group
     else:
         return spikes_df, stim_events_df, kept_clusters, cluster_info

@@ -15,6 +15,6 @@ docker run --rm \
   --processed-data-root /home/ninjaben/codin/geffen-lab-data/processed_data \
   --analysis-root /home/ninjaben/codin/geffen-lab-data/analysis \
   --experimenter BH \
-  --subject AS20-minimal3 \
+  --subject AS20-demo \
   --date "03112025" \
-  --event-times-pattern "tprime/*/*nidq.xd_8_3_0.txt"
+  --stim-times-pattern "tprime/*/*nidq.xd_8_3_0.txt"
