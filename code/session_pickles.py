@@ -103,13 +103,18 @@ def save_session_pickles(
     phy_npy_data = {name: load_phy_npy(phy_path, name) for name in phy_npy_names}
 
     # Load session events, in particular the stim/trial events.
-    logging.info(f"Loading stim event times from: {stim_times_path}")
-    stim_times = np.loadtxt(stim_times_path)
+    if stim_times_path:
+        logging.info(f"Loading stim event times from: {stim_times_path}")
+        stim_times = np.loadtxt(stim_times_path)
+    else:
+        stim_times = None
+        logging.warning("No trial/stim times found.")
 
     logging.info(f"Loading event times from: {event_times_paths}")
     event_times = {events_txt.stem.rsplit(".", 1)[-1]: np.loadtxt(events_txt) for events_txt in event_times_paths}
 
     # Load additional sorting data.
+    # stim_times_path and stim_events_temp are optional here, required for trial tensors below.
     logging.info(f"Loading neuronal data from {phy_path}")
     spikes_df, stim_events_temp, kept_clusters, cluster_info = load_neuronal(
         stim_times_path,
@@ -156,10 +161,10 @@ def save_session_pickles(
         pickle.dump(raw_data_dict, f)
 
     ##
-    # Trial tensors pickle: combine neural and behavioral data into trial tensors.
+    # Trial tensors pickle: combine neural, stim, and behavioral data into trial tensors.
     ##
 
-    if behavior_txt_path and behavior_mat_path:
+    if behavior_txt_path and behavior_mat_path and (stim_events_temp is not None):
         # Load behavior .txt and/or .mat.
         if "Habituation" in behavior_txt_path.as_posix():
             logging.info(f"Loading behavior 'Habituation' data from: {behavior_txt_path}")
@@ -221,7 +226,7 @@ def save_session_pickles(
             pickle.dump(trials_dict, f)
 
     else:
-        logging.warning("Behavior .txt and/or .mat not found, skipping trial tensors pickle.")
+        logging.warning("Behavior .txt, behavior .mat, or stim events not found, skipping trial tensors pickle.")
 
     ##
     # LFP pickle: convert LFP data to a pickle.

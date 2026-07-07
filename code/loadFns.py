@@ -419,16 +419,15 @@ def load_neuronal(
         spikes_df = pd.merge(spikes_df, temp, 'left', left_on='cluster', right_on='cluster_id')
         spikes_df.drop('cluster_id', axis=1, inplace=True)
 
-    if stim_times_path is None:
-        event_times_matches = sorted(find_files(".csv", "events", phy_path))
-        stim_times_path = event_times_matches[0]
-    event_times = np.genfromtxt(stim_times_path, delimiter=',')
-
-    stim_events_df = {
-        'event': 1 + 0*event_times,
-        'time': event_times
-    }
-    stim_events_df = pd.DataFrame(stim_events_df)
+    if stim_times_path :
+        event_times = np.genfromtxt(stim_times_path, delimiter=',')
+        stim_events_df = {
+            'event': 1 + 0*event_times,
+            'time': event_times
+        }
+        stim_events_df = pd.DataFrame(stim_events_df)
+    else:
+        stim_events_df = None
 
     if len(cluster_info_path) == 0:
         return spikes_df, stim_events_df, kept_clusters, cluster_group

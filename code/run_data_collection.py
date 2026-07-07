@@ -176,7 +176,12 @@ def collect_data(
         event_times_paths = find(event_times_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
         logging.info(f"Looking for session stim event times.")
-        stim_times_path = find_one(stim_times_pattern, filter=sorted_session_name, parent=processed_data_session_path)
+        stim_times_path = find_one(
+            stim_times_pattern,
+            filter=sorted_session_name,
+            parent=processed_data_session_path,
+            none_ok=True
+        )
 
         logging.info(f"Looking for session aligned signal.")
         aligned_voltage_path = find_one(
@@ -339,7 +344,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         type=str,
         nargs="+",
         help="List of key words used to match up corresponding behavior files and sorting subdirs. (default: %(default)s)",
-        default=["testing", "training"]
+        default=[""]
     )
     parser.add_argument(
         "--params-py-pattern",
