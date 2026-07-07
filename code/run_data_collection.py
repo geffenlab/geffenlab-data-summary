@@ -218,7 +218,8 @@ def collect_data(
 
             # Pass everything we know about this probe to save_session_pickles().
             phy_path = params_py_path.parent
-            pickles_path = Path(analysis_session_path, sorted_session_name, phy_path.name)
+            pickles_path = Path(analysis_session_path, "summary", sorted_session_name, phy_path.name)
+            pickles_path.mkdir(exist_ok=True, parents=True)
             save_session_pickles(
                 experimenter=experimenter,
                 subject=subject,

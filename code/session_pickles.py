@@ -107,7 +107,7 @@ def save_session_pickles(
     stim_times = np.loadtxt(stim_times_path)
 
     logging.info(f"Loading event times from: {event_times_paths}")
-    event_times = {events_txt.name: np.loadtxt(events_txt) for events_txt in event_times_paths}
+    event_times = {events_txt.stem.rsplit(".", 1)[-1]: np.loadtxt(events_txt) for events_txt in event_times_paths}
 
     # Load additional sorting data.
     logging.info(f"Loading neuronal data from {phy_path}")
@@ -248,7 +248,7 @@ def save_session_pickles(
         }
 
         # Save the LFPs as a pickle.
-        lfp_pickle_path = Path(pickles_path, "trial-tensors.pkl")
+        lfp_pickle_path = Path(pickles_path, "lfp.pkl")
         logging.info(f"Saving LFP pickle: {lfp_pickle_path}")
         with open(lfp_pickle_path, 'wb') as f:
             pickle.dump(lfp_dict, f)
