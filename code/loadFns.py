@@ -46,44 +46,6 @@ def gen_tensor(time_edges, neurons, events, spikes_df, nSpikes=False):
     return mat
 
 
-def gen_dataframe_local(
-    behavior_txt_path: Path,
-    behavior_mat_path: Path,
-    phy_path: Path,
-    event_times_path: Path,
-    spike_times_sec_path: Path,
-):
-    '''
-    This is similar to the original population-analysis gen_dataframe_git(), and should have the same result.
-    The difference is this one looks for all data, behavioral and neuronal, on the file system and not via the GitHub API.
-    '''
-
-    if "Habituation" in behavior_txt_path.as_posix():
-        behavior_df = load_behavior_habit(behavior_txt_path)
-    else:
-        behavior_df = load_behavior(behavior_mat_path)
-
-    print(f"Loading neuronal data from {phy_path}")
-    spikes_df, stim_events_temp, kept_clusters, cluster_info = load_neuronal(
-        event_times_path,
-        spike_times_sec_path,
-        phy_path=phy_path.as_posix()
-    )
-    events_df, nb_times = load_response_events(behavior_txt_path.as_posix(), stim_events_temp)
-
-    if len(events_df) == len(behavior_df):
-        trial_events = pd.concat([events_df, behavior_df], axis=1)
-    else:
-        if len(events_df) > len(behavior_df):
-            events_df = events_df[0:len(behavior_df)]
-        else:
-            behavior_df = behavior_df[0:len(events_df)]
-
-        trial_events = pd.concat([events_df, behavior_df], axis=1)
-
-    return trial_events, spikes_df, cluster_info, kept_clusters, nb_times
-
-
 def load_behavior(matfile: Path):
     '''
     Loads behavior file, returns dataframe with trial-by-trial information
@@ -446,7 +408,7 @@ def load_neuronal(
         cluster_group = sorted(find_files(".tsv", "cluster_group", phy_path))
         cluster_group = pd.read_csv(cluster_group[0], sep='\t')
         kept_clusters = cluster_group.loc[cluster_group['KSLabel'] == 'good', 'cluster_id'].values
-        print('Warning: cluster_info file not found, using KSLabels. No channel info available.')
+        logging.warning('cluster_info file not found, using KSLabels. No channel info available.')
 
     else:
         cluster_info = pd.read_csv(cluster_info_path[0], sep='\t')
@@ -479,10 +441,10 @@ def pick_good_clusters(cluster_info):
 
     # Prefer to use Phy curation 'group' column.
     if 'group' in cluster_info:
-        print("Picking good units from info column 'group'.")
+        logging.info("Picking good units from info column 'group'.")
         cluster_label = cluster_info['group'].astype(str)
     else:
-        print("Info column 'group' not found, picking good units from info column 'KSLabel'.")
+        logging.warning("Info column 'group' not found, picking good units from info column 'KSLabel'.")
         cluster_label = cluster_info['KSLabel'].astype(str)
 
     is_good = cluster_label == 'good'
@@ -490,48 +452,6 @@ def pick_good_clusters(cluster_info):
         raise ValueError("No 'good' units found.")
 
     return is_good, cluster_label
-
-
-def load_templates(
-    neuronal_loc: str
-):
-    """Load a matrix of mean waveforms per sorted cluster, with shape (n_clusters, n_channels, n_samples).
-
-    This is similar to loading a mean_waveforms.npy as produced by the Jennifer Colonell ecephys_spike_sorting pipeline.
-    Some tools, like SpikeInterface, may provide the same in formation in a sparse form, as templates.npy, and possibly template_ind.npy.
-    This reconstitutes a full, non-sparse matrix of shape (n_clusters, n_channels, n_samples), from those files.
-
-    It should be possible to use either mean_waveforms.npy or (templates.npy plus template_ind.npy) interchangeably.
-    """
-    # Look for mean waveforms per cluster as templates.npy, from eg Spike Interface.
-    # Don't confuse this with similar_templates.npy or spike_templates.npy!
-    templates_npy = Path(neuronal_loc, "templates.npy")
-    print(f"Loading waveform templates from {templates_npy}")
-    templates = np.load(templates_npy)
-
-    # templates has shape (num_units, num_samples, max_num_channels), which does not match our desired output shape.
-    # In particular, the max_num_channels dimension is sparse, with raw channel indices stored separately in template_ind.npy.
-    template_ind_npy = Path(neuronal_loc, "template_ind.npy")
-    if template_ind_npy.exists():
-        print(f"Loading template channel inds from {template_ind_npy}")
-        template_ind = np.load(template_ind_npy)
-
-        # Reconstruct a full matrix with shape (num_units, num_channels, num_samples).
-        num_units = templates.shape[0]
-        num_samples = templates.shape[1]
-        num_channels = template_ind.max() + 1
-        full_templates = np.zeros((num_units, num_channels, num_samples))
-        for unit_index in range(num_units):
-            channel_indices = template_ind[unit_index]
-            channel_is_present = np.nonzero(channel_indices >= 0)[0]
-            unit_template = templates[unit_index, :, channel_is_present]
-            full_templates[unit_index, channel_indices[channel_is_present], :] = unit_template
-
-    else:
-        print(f"Transposing dense templates to have shape (n_clusters, n_channels, n_samples)")
-        full_templates = np.transpose(templates, (0, 2, 1))
-
-    return full_templates
 
 # Here, we have general functions to locate the files we're interested in.
 
@@ -553,28 +473,6 @@ def find_files(fileend, keyword, folder):
         for file in files:
             if file.endswith(fileend) and keyword in file:
                 result.append(os.path.normpath(os.path.join(root, file)))
-    return result
-
-
-def find_folders(keyword, base_folder):
-    '''
-    Locates desired folders
-
-    Args:
-    keyword: string to look for in folder name
-    base_folder: folder to start in (but will walk through subfolders)
-
-    Returns:
-    result: list of folders that match query
-    '''
-    result = []
-    for root, dirs, files in os.walk(base_folder):
-        # Filter and add only matching directories
-        result.extend(
-            os.path.normpath(os.path.join(root, dir)) for dir in dirs if keyword in dir
-        )
-        del dirs[:]
-        break
     return result
 
 

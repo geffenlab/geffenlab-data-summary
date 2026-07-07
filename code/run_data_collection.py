@@ -48,7 +48,11 @@ def gather_session_and_subject_info(
     sheet_session_info = {}
     raw_data_experimenter_path = Path(raw_data_path, experimenter)
     gids_csv_default_path = Path("/opt/code/session-info-gids.csv")
-    gids_csv_path = find_one(session_info_gids_csv_pattern, default=gids_csv_default_path, parent=raw_data_experimenter_path)
+    gids_csv_path = find_one(
+        session_info_gids_csv_pattern,
+        default=gids_csv_default_path,
+        parent=raw_data_experimenter_path
+    )
     sheet_gids = pd.read_csv(gids_csv_path)
     gids = sheet_gids.loc[sheet_gids['subject'] == subject, 'gid']
     if gids.empty:
@@ -113,8 +117,10 @@ def collect_data(
     stim_times_pattern: str,
     stim_edges: list[float],
     resp_edges: list[float],
+    lfp_meta_pattern: str,
+    aligned_signal_pattern: str,
 ) -> list[Path]:
-    """Collect neuronal and behavioral data using utilities in loadFns.py, produce a pickle with dataframes in it."""
+    """Locate and correlate pipeline raw_data/ and processed_data/ for each session/probe."""
 
     # Gather session and subjet metadata from JSON and/or public Google Sheet.
     session_info, subject_info = gather_session_and_subject_info(
@@ -129,6 +135,7 @@ def collect_data(
         session_info_gids_csv_pattern,
     )
 
+    # Choose specific folders to search, for this session.
     raw_data_session_path = Path(raw_data_path, experimenter, subject, date)
     processed_data_session_path = Path(processed_data_path, experimenter, subject, date)
     analysis_session_path = Path(analysis_path, experimenter, subject, date)
@@ -157,6 +164,8 @@ def collect_data(
         else:
             logging.info(f"Skipping key word '{key_word}', no complete sorted data found.")
 
+    # Now we have sorting and behavior data correlated per session.
+    # Go one level further to find probes within each sorting.
     logging.info(f"Collecting data for {len(sessions)} sessions.")
     for behavior_txt, behavior_mat, sorted_session_name in sessions:
         logging.info(f"Processing session {sorted_session_name}:")
@@ -169,28 +178,45 @@ def collect_data(
         logging.info(f"Looking for session stim event times.")
         stim_times_path = find_one(stim_times_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
+        logging.info(f"Looking for session aligned signal.")
+        aligned_voltage_path = find_one(
+            aligned_signal_pattern,
+            filter=sorted_session_name,
+            parent=processed_data_session_path,
+            none_ok=True
+        )
+
         logging.info(f"Looking for a params.py for each probe.")
         params_py_paths = find(params_py_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
         logging.info(f"Looking for spike times in seconds for each probe.")
         spike_sec_paths = find(spike_times_sec_pattern, filter=sorted_session_name, parent=processed_data_session_path)
 
+        logging.info(f"Looking for processed .lf.meta for each probe.")
+        lf_meta_paths = find(lfp_meta_pattern, filter=sorted_session_name, parent=processed_data_session_path)
+        if not lf_meta_paths:
+            lf_meta_paths = [None] * len(spike_sec_paths)
+
         # For each probe we expect a params.py and a spike-times-in-seconds .npy.
+        # We also want the .lf.meta files, if they exist.
         # We'll expect these to correspond 1:1 and align them alphabetically (names should only differ by eg imec0 vs imec1).
         probes = list(
             zip(
                 sorted(params_py_paths),
                 sorted(spike_sec_paths),
+                sorted(lf_meta_paths)
             )
         )
-        for params_py_path, spike_times_sec_path in probes:
+
+        # Finally, we can process each probe, along with other session and behavior data.
+        for params_py_path, spike_times_sec_path, lf_meta_path in probes:
             # Create Phy cluster_info.tsv, if needed.
             cluster_info_tsv_path = Path(params_py_path).with_name("cluster_info.tsv")
             if not cluster_info_tsv_path.exists():
                 logging.info(f"Creating cluster info: {cluster_info_tsv_path}")
                 create_cluster_info(params_py_path)
 
-            # Put everything we collected above together into one or more pickles.
+            # Pass everything we know about this probe to save_session_pickles().
             phy_path = params_py_path.parent
             pickles_path = Path(analysis_session_path, sorted_session_name, phy_path.name)
             save_session_pickles(
@@ -209,7 +235,9 @@ def collect_data(
                 stim_times_path=stim_times_path,
                 stim_edges=stim_edges,
                 resp_edges=resp_edges,
-                pickles_path=pickles_path
+                lf_meta_path=lf_meta_path,
+                aligned_voltage_path=aligned_voltage_path,
+                pickles_path=pickles_path,
             )
 
     logging.info(f"Collected data for {len(sessions)} sessions.")
@@ -219,8 +247,7 @@ def collect_data(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     set_up_logging()
 
-    parser = ArgumentParser(
-        description="Collect neuronal and behavioral data, save a pickle for each session or probe.")
+    parser = ArgumentParser(description="Save a pickle for each session/probe including raw_data/ and processed_data/.")
 
     parser.add_argument(
         "--raw-data-root",
@@ -365,6 +392,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="List of bin edge [low, high, step] for creating resp_tensor. (default: %(default)s)",
         default=[-1.0, 1.0, 0.02]
     )
+    parser.add_argument(
+        "--lfp-meta-pattern",
+        type=str,
+        help="Glob pattern to locate a lf.meta (and associated lf.bin), within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
+        default="catgt/*/*/*.lf.meta"
+    )
+    parser.add_argument(
+        "--aligned-signal-pattern",
+        type=str,
+        help="Glob pattern to locate a _voltage.npy (and associated _times.txt), within PROCESSED_DATA_ROOT/EXPERIMENTER/SUBJECT/DATE. (default: %(default)s)",
+        default="signal-alignment/*/treadmill_voltage.npy"
+    )
 
     cli_args = parser.parse_args(argv)
 
@@ -396,10 +435,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cli_args.stim_times_pattern,
             cli_args.stim_edges,
             cli_args.resp_edges,
+            cli_args.lfp_meta_pattern,
+            cli_args.aligned_signal_pattern,
         )
 
     except:
-        logging.error("Error collecting neuronal and behavioral data.", exc_info=True)
+        logging.error("Error collecting session data.", exc_info=True)
         return -1
 
 
