@@ -70,8 +70,8 @@ def gather_session_and_subject_info(
 
     # Look for optional subject metadata in a JSON file.
     subject_info = {}
-    logging.info("Attempting to load subject info from JSON.")
     raw_data_subject_path = Path(raw_data_experimenter_path, subject)
+    logging.info(f"Looking for subject info JSON in: {raw_data_subject_path}")
     subject_info_json_path = find_one(subject_info_json_pattern, none_ok=True, parent=raw_data_subject_path)
     if subject_info_json_path:
         logging.info(f"Loading subject info from: {subject_info_json_path}")
@@ -80,8 +80,8 @@ def gather_session_and_subject_info(
 
     # Look for optional session metadata in a JSON file.
     json_session_info = {}
-    logging.info("Attempting to load session info from JSON.")
-    raw_data_session_path = Path(raw_data_subject_path, subject)
+    raw_data_session_path = Path(raw_data_subject_path, date)
+    logging.info(f"Looking for session info JSON in: {raw_data_session_path}")
     session_info_json_path = find_one(session_info_json_pattern, none_ok=True, parent=raw_data_session_path)
     if session_info_json_path:
         logging.info(f"Loading session info from: {session_info_json_path}")
