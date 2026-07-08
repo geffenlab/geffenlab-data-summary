@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from phylib.io.model import load_model
+from phylib.utils import Bunch
 from phylib.io.array import _spikes_per_cluster
 from phylib.utils._misc import write_tsv
 
@@ -44,6 +45,22 @@ def create_cluster_info(
     logging.info(f"Loading Phy model from {params_py}")
     model = load_model(params_py)
     model.describe()
+
+    if model.sparse_templates is None:
+        logging.warning(f"phylib did not load templates.npy, attempting to load directly, as read-only.")
+        # phylib sometimes silently (!!) fails to load templates.
+        # It incorrectly requests read-write (r+) access to templates.npy.
+        # But it doesn't need write access on disk, it only needs to load the data and write to it in memory.
+        # This workaround does the same as model._load_templates(), but without needing write access on disk.
+        path = model._find_path('templates.npy', 'templates.waveforms.npy', 'templates.waveforms.*.npy')
+        data = np.load(path)
+        data = np.atleast_3d(data)
+        assert data.ndim == 3
+        assert data.dtype in (np.float32, np.float64)
+        empty_templates = np.all(np.all(np.isnan(data), axis=1), axis=1)
+        data[empty_templates, ...] = 0
+        cols = None
+        model.sparse_templates = Bunch(data=data, cols=cols)
 
     # Phy has a couple of ways to get a channel associated with each cluster.
     # For example model.clusters_channels or model.templates_channels.
