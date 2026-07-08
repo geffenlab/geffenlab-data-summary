@@ -1,3 +1,6 @@
+# These functions help find files by matching "glob" patterns.
+#   https://docs.python.org/3/library/glob.html
+
 import logging
 from pathlib import Path
 

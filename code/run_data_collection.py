@@ -1,3 +1,20 @@
+# This code is the starting point for our data summary and pickle creation.
+# This is the code that's called when one of our pipelines run its "summary" step.
+#   https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/ci-nidq.yaml#L122
+# The arguments in the step's "command" list are parsed by the main() function in this file, below.
+#
+# These arguments describe one or more recording sessions for a given experimenter, subject, and date.
+# They also describe what to expect within each session:
+#   - sorting data
+#   - subject or session info / metadata?
+#   - behavior data with stim events?
+#   - aligned signal (eg treadmill) data?
+#   - LFPs?
+#
+# The goal of this function is to locate all the expected data on the file system, (eg cortex raw_data/ and processed_data/),
+# and to pass all of this to our save_session_pickles() function in session_pickles.py.
+# Hopefully this funciton handles the "pipeline" part, allowing save_session_pickles() to focus on the lab's data.
+
 import sys
 from argparse import ArgumentParser
 from typing import Optional, Sequence
@@ -140,13 +157,14 @@ def collect_data(
     processed_data_session_path = Path(processed_data_path, experimenter, subject, date)
     analysis_session_path = Path(analysis_path, experimenter, subject, date)
 
-    # Locate sorted session subir names.
+    # Locate sorted session subdir names (from SpikeGlx runs).
     sorting_path = Path(processed_data_session_path, sorting_subdir)
     logging.info(f"Looking for sorted session names within: {sorting_path}")
     sorted_session_names = [sorting_dir.name for sorting_dir in sorting_path.iterdir() if sorting_dir.is_dir()]
     logging.info(f"Found {len(sorted_session_names)} sorted session names: {sorted_session_names}")
 
     # Locate corresponding sets of behavior files and sorting subdirs.
+    # These are correlated by session key words like "training" vs "testing".
     sessions = []
     for key_word in session_key_words:
         logging.info(f"Looking for '{key_word}' behavior .txt files.")
@@ -165,7 +183,7 @@ def collect_data(
             logging.info(f"Skipping key word '{key_word}', no complete sorted data found.")
 
     # Now we have sorting and behavior data correlated per session.
-    # Go one level further to find probes within each sorting.
+    # Go one level further to find probes within each session.
     logging.info(f"Collecting data for {len(sessions)} sessions.")
     for behavior_txt, behavior_mat, sorted_session_name in sessions:
         logging.info(f"Processing session {sorted_session_name}:")
@@ -204,7 +222,8 @@ def collect_data(
 
         # For each probe we expect a params.py and a spike-times-in-seconds .npy.
         # We also want the .lf.meta files, if they exist.
-        # We'll expect these to correspond 1:1 and align them alphabetically (names should only differ by eg imec0 vs imec1).
+        # We'll expect these to correspond 1:1 and align them alphabetically.
+        # At this level of organization, names should only differ by eg imec0 vs imec1.
         probes = list(
             zip(
                 sorted(params_py_paths),
@@ -221,7 +240,7 @@ def collect_data(
                 logging.info(f"Creating cluster info: {cluster_info_tsv_path}")
                 create_cluster_info(params_py_path)
 
-            # Pass everything we know about this probe to save_session_pickles().
+            # Pass everything we know about this session/probe to save_session_pickles().
             phy_path = params_py_path.parent
             pickles_path = Path(analysis_session_path, "summary", sorted_session_name, phy_path.name)
             pickles_path.mkdir(exist_ok=True, parents=True)

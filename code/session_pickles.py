@@ -1,3 +1,25 @@
+# This code receives lots of file paths and othe session info from the main entrypoint in run_data_collection.py.
+# The arguments passed to save_session_pickles() should represent "everything the pipeline knows about about a session/probe."
+#
+# Depending on what's passed in, save_session_pickles() will save one or more Pickle files with lab data.
+#
+#   raw-data.pkl:
+#       This has subject and session info/metadata, sorting data from Phy, and any events from nidq/onebox.
+#       Optionally this has stim events and/or aligned signal (eg treadmill) data.
+#
+#   trial-tensors.pkl:
+#       If the session has behavior .txt and .mat, and stim events, this contains neural-plus-behavioral data as trial tensors.
+#
+#   lfps.pkl:
+#       If the session has LFPs from CatGT, this has LFP raw data plus metadata, channel map, and sample timestamps.
+#
+# This code should evolve as needed, to support the lab's needs!
+# Hopefully run_data_collection.py can continue to handle the pipeline part, and the code here can focus on lab data.
+# Feel free to add or change code here, and/or add helper files in the code/ subdir of the repo, to import here.
+#
+# See also code/pickle_testing.ipynb in this repo.  This notebook can help test pickle code locally,
+# before integrating code changes into pipeline runs.
+
 import logging
 from pathlib import Path
 import pickle

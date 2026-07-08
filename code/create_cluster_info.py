@@ -1,3 +1,9 @@
+# This code loads sorting results in Phy format and creates a cluster_info.tsv, similar to what the Phy GUI does.
+# Doing this here allows downstream analysis code to work with or without running the Phy GUI.
+# This code is based on the Phy GUI code and on phylib, which is the same library used by the Phy GUI.
+#   https://github.com/cortex-lab/phy
+#   https://github.com/cortex-lab/phylib
+
 import logging
 from pathlib import Path
 

@@ -2,7 +2,8 @@
 
 This repository defines a processing step that is part of the [geffenlab-ephys-pipeline](https://github.com/geffenlab/geffenlab-ephys-pipeline).
 
-This "data summary" step combines session behavioral data with sorted neural data and saves aligned, combined data as [pickled](https://docs.python.org/3/library/pickle.html) [dataframes](https://pandas.pydata.org/).
+This "summary" step locates and combines session data and saves aligned, combined data as Python [Pickles](https://docs.python.org/3/library/pickle.html).
+It will save one or more pickle, depending on which kinds of data are present for each session: sorted spikes, behavior and stim events, aligned signals (eg treadmill) and/or LFPs 
 
 This repository contains code borrowed from [jcollina/population-analysis](https://github.com/jcollina/population-analysis) -- thank you!
 
@@ -12,7 +13,7 @@ This repository defines the processing step's [environment](./environment/), inc
 
 This repository is the source of truth for the step's environment and code, but we don't run the code directly from here.  Instead we package the environment and code from this repository into a [Docker image](https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-an-image/).  This makes the step portable and reproducible.
 
-The [geffenlab-ephys-pipeline](https://github.com/geffenlab/geffenlab-ephys-pipeline) defines pipelines in terms of our Docker images.  [Here's an example](https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/as-nidq.yaml#L41) of where a pipeline refers to one of our Docker images.
+The [geffenlab-ephys-pipeline](https://github.com/geffenlab/geffenlab-ephys-pipeline) defines pipelines in terms of our Docker images.  [Here's an example](https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/as-nidq.yaml#L135) of where a pipeline refers to one of our Docker images.
 
 ## Creating new versions of the Docker image
 
@@ -52,7 +53,7 @@ You can follow the progress of the Docker image build at the step [Actions](http
 
 ## Update your pipeline
 
-When your step's new Docker image is ready you can update your pipeline to refer to the new version.  This means updating the version number in your pipeline YAML, for example [here](https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/as-nidq.yaml#L41).  The next time you run your pipeline it will download the newer Docker image version that you specified, and use that version of the environment and code.
+When your step's new Docker image is ready you can update your pipeline to refer to the new version.  This means updating the version number in your pipeline YAML, for example [here](https://github.com/geffenlab/geffenlab-ephys-pipeline/blob/master/proceed/as-nidq.yaml#L136).  The next time you run your pipeline it will download the newer Docker image version that you specified, and use that version of the environment and code.
 
 ### older verions are still OK
 

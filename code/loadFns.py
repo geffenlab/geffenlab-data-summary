@@ -1,3 +1,12 @@
+# These loading functions load sorting data and Geffen lab behavior data.
+# This code is based on the lab's population-analysis code
+#   https://github.com/jcollina/population-analysis
+# The the code here has been simplified and revised in a few ways:
+#   - only take the code we need for summarizing session data and creating pickles
+#   - look for data on the file system, rather than downloading from Git repos
+#   - use the Python logging framework rather than plain print() calls
+#   - remove interactive and conditional blocks that are nto relevant to pipelines on cortex
+
 from pathlib import Path
 import os
 from datetime import datetime
@@ -80,7 +89,7 @@ def load_behavior(matfile: Path):
     return behavior_df
 
 
-def load_behavior_habit(taskfile):  # , stim_events_df):
+def load_behavior_habit(taskfile):
     '''
     Loads text file, returns the stimulus frequencies associated with each trial of habituation
 
@@ -303,8 +312,6 @@ def load_response_events(taskfile, stim_events_df):
 
     return pd.DataFrame(events_df), noise_burst_times
 
-# Here we're playing around with getting google sheets data
-
 
 def get_row_dict_from_public_sheet(
     date_obj: datetime,
@@ -314,7 +321,17 @@ def get_row_dict_from_public_sheet(
     sheet_date_column_name: str = 'DATE',
 ) -> dict[str, str]:
     """
-    Read subject and session metadata from a Google Sheets doc on the web.
+    Read subject and session metadata from a row of a Google Sheets doc on the web.
+
+    Args:
+        date_obj: Python datetime object with the date of the row to extract.
+        sheet_id: Google Sheets sheet id from the document URL (see URL patterns below)
+        tab_gid: Google Sheets tab/worksheet git from the document URL (see URL patterns below)
+        sheet_date_format: date format used in the sheet DATE column, default is '%Y-%m-%d' (yyyy-mm-dd)
+        sheet_date_column_name: name of the worksheet column that contains the date, default is 'DATE'.
+
+    Returns:
+        A dictionary representiting the row of data for the given date, with column headers and dictionary keys.
 
     We have two ways to query Google sheets for subject medadata:
 
@@ -362,8 +379,6 @@ def get_row_dict_from_public_sheet(
         logging.warning(f"Unable to get session info from Sheet: {e}")
         return {}
 
-##
-
 
 def load_neuronal(
     stim_times_path: Path,
@@ -387,6 +402,7 @@ def load_neuronal(
         the time (in seconds) when the event was recorded
     kept_clusters: numpy array that contains the IDs associated with the clusters that should be
         analyzed. This is based on the choice of whether to "allow_mua".
+    cluster_info: pandas dataframe with the contents of Phy cluster_info.tsv.
     '''
 
     spike_times = np.load(spike_times_sec_path)
@@ -451,8 +467,6 @@ def pick_good_clusters(cluster_info):
         raise ValueError("No 'good' units found.")
 
     return is_good, cluster_label
-
-# Here, we have general functions to locate the files we're interested in.
 
 
 def find_files(fileend, keyword, folder):
