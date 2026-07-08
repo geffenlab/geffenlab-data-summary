@@ -234,11 +234,14 @@ def collect_data(
 
         # Finally, we can process each probe, along with other session and behavior data.
         for params_py_path, spike_times_sec_path, lf_meta_path in probes:
-            # Create Phy cluster_info.tsv, if needed.
+            # Try to create Phy cluster_info.tsv, if needed.
             cluster_info_tsv_path = Path(params_py_path).with_name("cluster_info.tsv")
             if not cluster_info_tsv_path.exists():
-                logging.info(f"Creating cluster info: {cluster_info_tsv_path}")
-                create_cluster_info(params_py_path)
+                logging.info(f"Attempting to create cluster info: {cluster_info_tsv_path}")
+                try:
+                    create_cluster_info(params_py_path)
+                except Exception as e:
+                    logging.warning(f"Error creating cluster info: {e}")
 
             # Pass everything we know about this session/probe to save_session_pickles().
             phy_path = params_py_path.parent
