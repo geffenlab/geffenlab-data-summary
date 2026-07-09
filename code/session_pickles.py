@@ -176,6 +176,11 @@ def save_session_pickles(
         }
         raw_data_dict |= aligned_signal_dict
 
+    if behavior_mat_path:
+        logging.info(f"Loading behavior data from: {behavior_mat_path}")
+        behavior_df = load_behavior(behavior_mat_path)
+        raw_data_dict["behavior_df"] = behavior_df
+
     # Save the raw data as a pickle.
     raw_data_pickle_path = Path(pickles_path, "raw-data.pkl")
     logging.info(f"Saving raw data pickle: {raw_data_pickle_path}")
